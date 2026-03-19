@@ -1,85 +1,41 @@
+import java.io.*;
 import java.util.*;
 
-class RoomInventory {
-    private HashMap<String, Integer> inventory;
+class SystemState implements Serializable {
+    HashMap<String, Integer> inventory;
+    List<String> bookings;
 
-    public RoomInventory() {
-        inventory = new HashMap<>();
-        inventory.put("Single", 1);
-        inventory.put("Double", 1);
+    public SystemState(HashMap<String, Integer> inventory, List<String> bookings) {
+        this.inventory = inventory;
+        this.bookings = bookings;
     }
+}
 
-    public synchronized boolean allocate(String type) {
-        int available = inventory.getOrDefault(type, 0);
-        if (available > 0) {
-            inventory.put(type, available - 1);
-            return true;
+class PersistenceService {
+
+    private static final String FILE_NAME = "system_state.dat";
+
+    public void save(SystemState state) {
+        try {
+            ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(FILE_NAME));
+            out.writeObject(state);
+            out.close();
+            System.out.println("State saved.");
+        } catch (Exception e) {
+            System.out.println("Error saving state.");
         }
-        return false;
     }
 
-    public void display() {
-        System.out.println("\nInventory:");
-        for (String k : inventory.keySet()) {
-            System.out.println(k + " : " + inventory.get(k));
-        }
-    }
-}
-
-class Reservation {
-    String guest;
-    String roomType;
-
-    public Reservation(String g, String t) {
-        guest = g;
-        roomType = t;
-    }
-}
-
-class BookingQueue {
-    private Queue<Reservation> queue = new LinkedList<>();
-
-    public synchronized void add(Reservation r) {
-        queue.add(r);
-    }
-
-    public synchronized Reservation get() {
-        return queue.poll();
-    }
-
-    public synchronized boolean isEmpty() {
-        return queue.isEmpty();
-    }
-}
-
-class BookingProcessor extends Thread {
-
-    private BookingQueue queue;
-    private RoomInventory inventory;
-
-    public BookingProcessor(BookingQueue q, RoomInventory i) {
-        queue = q;
-        inventory = i;
-    }
-
-    public void run() {
-        while (true) {
-            Reservation r;
-            synchronized (queue) {
-                if (queue.isEmpty()) break;
-                r = queue.get();
-            }
-
-            if (r != null) {
-                boolean success = inventory.allocate(r.roomType);
-                if (success) {
-                    System.out.println(Thread.currentThread().getName() +
-                            " booked " + r.roomType + " for " + r.guest);
-                } else {
-                    System.out.println(Thread.currentThread().getName() +
-                            " failed for " + r.guest + " (" + r.roomType + ")");
-                }
-            }
+    public SystemState load() {
+        try {
+            ObjectInputStream in = new ObjectInputStream(new FileInputStream(FILE_NAME));
+            SystemState state = (SystemState) in.readObject();
+            in.close();
+            System.out.println("State loaded.");
+            return state;
+        } catch (Exception e) {
+            System.out.println("No previous state found. Starting fresh.");
+            return null;
         }
     }
 }
@@ -91,33 +47,41 @@ public class BOOKmystayapp {
         System.out.println("=======================================");
         System.out.println("      BOOK MY STAY APPLICATION");
         System.out.println("=======================================");
-        System.out.println("Version: 11.0");
+        System.out.println("Version: 12.0");
         System.out.println("---------------------------------------");
 
-        RoomInventory inventory = new RoomInventory();
+        PersistenceService service = new PersistenceService();
 
-        BookingQueue queue = new BookingQueue();
+        SystemState loadedState = service.load();
 
-        queue.add(new Reservation("Arnav", "Single"));
-        queue.add(new Reservation("Rahul", "Single"));
-        queue.add(new Reservation("Sneha", "Double"));
-        queue.add(new Reservation("Amit", "Double"));
+        HashMap<String, Integer> inventory;
+        List<String> bookings;
 
-        BookingProcessor t1 = new BookingProcessor(queue, inventory);
-        BookingProcessor t2 = new BookingProcessor(queue, inventory);
+        if (loadedState != null) {
+            inventory = loadedState.inventory;
+            bookings = loadedState.bookings;
+        } else {
+            inventory = new HashMap<>();
+            inventory.put("Single", 2);
+            inventory.put("Double", 1);
+            bookings = new ArrayList<>();
+        }
 
-        t1.setName("Thread-1");
-        t2.setName("Thread-2");
+        inventory.put("Single", inventory.getOrDefault("Single", 0) - 1);
+        bookings.add("Arnav booked Single");
 
-        t1.start();
-        t2.start();
+        System.out.println("\nCurrent Inventory:");
+        for (String k : inventory.keySet()) {
+            System.out.println(k + " : " + inventory.get(k));
+        }
 
-        try {
-            t1.join();
-            t2.join();
-        } catch (Exception e) {}
+        System.out.println("\nBooking History:");
+        for (String b : bookings) {
+            System.out.println(b);
+        }
 
-        inventory.display();
+        SystemState newState = new SystemState(inventory, bookings);
+        service.save(newState);
 
         System.out.println("\nApplication executed successfully.");
     }
